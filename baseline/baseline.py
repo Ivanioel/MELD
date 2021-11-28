@@ -2,7 +2,7 @@ import argparse
 from keras.layers import Input, Dense, Embedding, Conv2D, MaxPool2D, Lambda, LSTM, TimeDistributed, Masking, Bidirectional
 from keras.layers import Reshape, Flatten, Dropout, Concatenate
 from keras.callbacks import ModelCheckpoint, EarlyStopping
-from keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from keras.models import Model, load_model
 import keras.backend as K
 from sklearn.model_selection import train_test_split
@@ -22,8 +22,8 @@ class bc_LSTM:
 	def __init__(self, args):
 		self.classification_mode = args.classify
 		self.modality = args.modality
-		self.PATH = "./data/models/{}_weights_{}.hdf5".format(args.modality,self.classification_mode.lower())
-		self.OUTPUT_PATH = "./data/pickles/{}_{}.pkl".format(args.modality,self.classification_mode.lower())
+		self.PATH = "../data/models/{}_weights_{}.hdf5".format(args.modality,self.classification_mode.lower())
+		self.OUTPUT_PATH = "../data/pickles/{}_{}.pkl".format(args.modality,self.classification_mode.lower())
 		print("Model initiated for {} classification".format(self.classification_mode))
 
 
@@ -274,7 +274,7 @@ if __name__ == "__main__":
 	args.modality = args.modality.lower()
 	
 	# Check directory existence
-	for directory in ["./data/pickles", "./data/models"]:
+	for directory in ["../data/pickles", "../data/models"]:
 		if not os.path.exists(directory):
 		    os.makedirs(directory)
 
