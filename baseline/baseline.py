@@ -1,5 +1,7 @@
 import argparse
-from keras.layers import Input, Dense, Embedding, Conv2D, MaxPool2D, Lambda, LSTM, TimeDistributed, Masking, Bidirectional
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+from keras.layers import Input, Dense, Embedding, Conv2D, MaxPool2D, Lambda, LSTM, TimeDistributed, Masking, Bidirectional, GRU
 from keras.layers import Reshape, Flatten, Dropout, Concatenate
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from tensorflow.keras.optimizers import Adam
@@ -11,18 +13,35 @@ from sklearn.metrics import classification_report
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
-import os, pickle
+import pickle
 import numpy as np
+import matplotlib.pyplot as plt
+import itertools
+import seaborn as sn
+import pandas as pd
+from keras import backend as K
+import tensorflow as tf
 
-# os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-# os.environ["CUDA_VISIBLE_DEVICES"]="0"
+# Compatible with tensorflow backend
+
+def focal_loss(gamma=2., alpha=.25):
+	def focal_loss_fixed(y_true, y_pred):
+		pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+		pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+		return -K.mean(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1+K.epsilon())) - K.mean((1 - alpha) * K.pow(pt_0, gamma) * K.log(1. - pt_0 + K.epsilon()))
+	return focal_loss_fixed
+
 
 class bc_LSTM:
 
 	def __init__(self, args):
 		self.classification_mode = args.classify
 		self.modality = args.modality
-		self.PATH = "../data/models/{}_weights_{}.hdf5".format(args.modality,self.classification_mode.lower())
+		if args.path is None:
+			self.PATH = "../data/models/{}_weights_{}_{}.hdf5".format(args.modality,self.classification_mode.lower(), args.model)
+		else:
+			self.PATH = args.path
+		self.PATH_TRAIN = "../data/models/{}_weights_{}_{}_train.hdf5".format(args.modality,self.classification_mode.lower(), args.model)
 		self.OUTPUT_PATH = "../data/pickles/{}_{}.pkl".format(args.modality,self.classification_mode.lower())
 		print("Model initiated for {} classification".format(self.classification_mode))
 
@@ -62,7 +81,6 @@ class bc_LSTM:
 		self.classes = self.train_y.shape[2]
 			
 
-
 	def calc_test_result(self, pred_label, test_label, test_mask):
 
 		true_label=[]
@@ -73,8 +91,14 @@ class bc_LSTM:
 				if test_mask[i,j]==1:
 					true_label.append(np.argmax(test_label[i,j] ))
 					predicted_label.append(np.argmax(pred_label[i,j] ))
+		print(predicted_label)
 		print("Confusion Matrix :")
-		print(confusion_matrix(true_label, predicted_label))
+		cm = confusion_matrix(true_label, predicted_label)
+		print(cm)
+		df_cm = pd.DataFrame(cm)
+		plt.figure(figsize = (10,7))
+		sn.heatmap(df_cm, annot=True)
+		plt.show()
 		print("Classification Report :")
 		print(classification_report(true_label, predicted_label, digits=4))
 		print('Weighted FScore: \n ', precision_recall_fscore_support(true_label, predicted_label, average='weighted'))
@@ -100,6 +124,84 @@ class bc_LSTM:
 		model = Model(inputs, output)
 		return model
 
+	def get_audio_model_unidir(self):
+
+		# Modality specific hyperparameters
+		self.epochs = 100
+		self.batch_size = 50
+
+		# Modality specific parameters
+		self.embedding_dim = self.train_x.shape[2]
+
+		print("Creating Model...")
+		
+		inputs = Input(shape=(self.sequence_length, self.embedding_dim), dtype='float32')
+		masked = Masking(mask_value =0)(inputs)
+		lstm = LSTM(300, activation='tanh', return_sequences = True, dropout=0.4)(masked)
+		lstm = LSTM(300, activation='tanh', return_sequences = True, dropout=0.4, name="utter")(lstm)
+		output = TimeDistributed(Dense(self.classes,activation='softmax'))(lstm)
+
+		model = Model(inputs, output)
+		return model
+
+	def get_audio_model_unidir_one(self):
+
+		# Modality specific hyperparameters
+		self.epochs = 100
+		self.batch_size = 50
+
+		# Modality specific parameters
+		self.embedding_dim = self.train_x.shape[2]
+
+		print("Creating Model...")
+		
+		inputs = Input(shape=(self.sequence_length, self.embedding_dim), dtype='float32')
+		masked = Masking(mask_value =0)(inputs)
+		lstm = LSTM(300, activation='tanh', return_sequences = True, dropout=0.2, name="utter")(masked)
+		output = TimeDistributed(Dense(self.classes,activation='softmax'))(lstm)
+
+		model = Model(inputs, output)
+		return model
+	
+	def get_audio_model_unigru(self):
+
+		# Modality specific hyperparameters
+		self.epochs = 100
+		self.batch_size = 50
+
+		# Modality specific parameters
+		self.embedding_dim = self.train_x.shape[2]
+
+		print("Creating Model...")
+		
+		inputs = Input(shape=(self.sequence_length, self.embedding_dim), dtype='float32')
+		masked = Masking(mask_value =0)(inputs)
+		gru = GRU(300, activation='tanh', return_sequences = True, dropout=0.2)(masked)
+		gru = GRU(300, activation='tanh', return_sequences = True, dropout=0.2, name="utter")(gru)
+		output = TimeDistributed(Dense(self.classes,activation='softmax'))(gru)
+
+		model = Model(inputs, output)
+		return model
+
+	def get_audio_model_bigru(self):
+
+		# Modality specific hyperparameters
+		self.epochs = 100
+		self.batch_size = 50
+
+		# Modality specific parameters
+		self.embedding_dim = self.train_x.shape[2]
+
+		print("Creating Model...")
+		
+		inputs = Input(shape=(self.sequence_length, self.embedding_dim), dtype='float32')
+		masked = Masking(mask_value =0)(inputs)
+		gru = Bidirectional(GRU(300, activation='tanh', return_sequences = True, dropout=0.2))(masked)
+		gru = Bidirectional(GRU(300, activation='tanh', return_sequences = True, dropout=0.2), name="utter")(gru)
+		output = TimeDistributed(Dense(self.classes,activation='softmax'))(gru)
+
+		model = Model(inputs, output)
+		return model
 
 	def get_text_model(self):
 
@@ -204,10 +306,19 @@ class bc_LSTM:
 
 	def train_model(self):
 
-		checkpoint = ModelCheckpoint(self.PATH, monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
+		checkpoint = ModelCheckpoint(self.PATH_TRAIN, monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
 
 		if self.modality == "audio":
-			model = self.get_audio_model()
+			if args.model == "bidir":
+				model = self.get_audio_model()
+			elif args.model == "unidir":
+				model = self.get_audio_model_unidir()
+			elif args.model == "unidir_one":
+				model = self.get_audio_model_unidir_one()
+			elif args.model == "unigru":
+				model = self.get_audio_model_unigru()
+			elif args.model == "bigru":
+				model = self.get_audio_model_bigru()
 			model.compile(optimizer='adadelta', loss='categorical_crossentropy', sample_weight_mode='temporal')
 		elif self.modality == "text":
 			model = self.get_text_model()
@@ -217,6 +328,9 @@ class bc_LSTM:
 			model.compile(optimizer='adam', loss='categorical_crossentropy', sample_weight_mode='temporal')
 
 		early_stopping = EarlyStopping(monitor='val_loss', patience=10)
+		
+		class_weight_emotion = {0: 4.0, 1: 15.0, 2: 15.0, 3: 3.0, 4: 1.0, 5: 6.0, 6: 3.0} 
+		class_weight_sentiment = {0: 0.5, 1: 1.0, 2: 1.0} 
 		model.fit(self.train_x, self.train_y,
 		                epochs=self.epochs,
 		                batch_size=self.batch_size,
@@ -230,8 +344,10 @@ class bc_LSTM:
 
 
 	def test_model(self):
-
-		model = load_model(self.PATH)
+	# Selecciona el path que nos interesa	
+		path = self.PATH if args.train is False else self.PATH_TRAIN
+	#	model = load_model(path, custom_objects={'focal_loss_fixed': focal_loss()})
+		model = load_model(path)
 		intermediate_layer_model = Model(inputs=model.input, outputs=model.get_layer("utter").output)
 
 		intermediate_output_train = intermediate_layer_model.predict(self.train_x)
@@ -261,6 +377,8 @@ if __name__ == "__main__":
 	parser.add_argument("-modality", help="Set the modality to be 'text' or 'audio' or 'bimodal'", required=True)
 	parser.add_argument("-train", default=False, action="store_true" , help="Flag to intiate training")
 	parser.add_argument("-test", default=False, action="store_true" , help="Flag to initiate testing")
+	parser.add_argument("-model", default="bidir", choices=["bidir", "unidir", "unidir_one", "unigru", "bigru"])
+	parser.add_argument("-path", default=None)
 	args = parser.parse_args()
 
 	if args.classify.lower() not in ["emotion", "sentiment"]:
